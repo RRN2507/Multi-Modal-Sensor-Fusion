@@ -415,3 +415,62 @@ if __name__ == "__main__":
 
     loss_fn = MultiTaskLoss()
     print(f"Loss params: {sum(p.numel() for p in loss_fn.parameters())}")
+def build_targets(
+    gt_boxes, gt_classes, gt_vels,
+    bev_h=128, bev_w=128,
+    pc_range=(-51.2, -51.2, 51.2, 51.2),
+    voxel_size=0.8, n_classes=9,
+    device="cpu", sigma=2.0,
+):
+    import torch
+    import math
+
+    heatmap  = torch.zeros(n_classes, bev_h, bev_w)
+    offset_t = torch.zeros(2, bev_h, bev_w)
+    height_t = torch.zeros(1, bev_h, bev_w)
+    size_t   = torch.zeros(3, bev_h, bev_w)
+    yaw_t    = torch.zeros(2, bev_h, bev_w)
+    vel_t    = torch.zeros(2, bev_h, bev_w)
+    mask     = torch.zeros(1, bev_h, bev_w)
+
+    for i in range(len(gt_boxes)):
+        x, y, z, w, l, h, yaw = gt_boxes[i].float()
+        cls = int(gt_classes[i].item()) % n_classes
+        vx, vy = gt_vels[i].float()
+
+        px = int((x - pc_range[0]) / voxel_size)
+        py = int((y - pc_range[1]) / voxel_size)
+        if not (0 <= px < bev_w and 0 <= py < bev_h):
+            continue
+
+        rad = max(1, int(max(abs(w), abs(l)) / (2 * voxel_size)))
+        for dy in range(-rad, rad + 1):
+            for dx in range(-rad, rad + 1):
+                nx, ny = px + dx, py + dy
+                if 0 <= nx < bev_w and 0 <= ny < bev_h:
+                    val = math.exp(-(dx**2 + dy**2) / (2 * sigma**2))
+                    if val > heatmap[cls, ny, nx]:
+                        heatmap[cls, ny, nx] = val
+
+        if 0 <= px < bev_w and 0 <= py < bev_h:
+            offset_t[0, py, px] = x / voxel_size - px
+            offset_t[1, py, px] = y / voxel_size - py
+            height_t[0, py, px] = z
+            size_t[0, py, px]   = abs(w)
+            size_t[1, py, px]   = abs(l)
+            size_t[2, py, px]   = abs(h)
+            yaw_t[0, py, px]    = torch.sin(yaw)
+            yaw_t[1, py, px]    = torch.cos(yaw)
+            vel_t[0, py, px]    = vx
+            vel_t[1, py, px]    = vy
+            mask[0, py, px]     = 1.0
+
+    return {
+        "heatmap": heatmap.to(device),
+        "offset":  offset_t.to(device),
+        "height":  height_t.to(device),
+        "size":    size_t.to(device),
+        "yaw":     yaw_t.to(device),
+        "velocity": vel_t.to(device),
+        "mask":    mask.to(device),
+    }

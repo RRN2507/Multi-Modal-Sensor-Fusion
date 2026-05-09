@@ -237,12 +237,16 @@ class WeatherAdaptiveGating(nn.Module):
         weather_ce = F.cross_entropy(aux["weather_logits"], gt_weather)
 
         # Prior KL loss (soft target)
-        prior_target = self.weather_prior[gt_weather]   # (B, n_mod)
+   
+        available_mods = [m for m in self.modality_names if m in aux["scalar_weights"]]
         scalar_stack = torch.cat([
             aux["scalar_weights"][m].view(B, 1)
-            for m in self.modality_names
-            if m in aux["scalar_weights"]
-        ], dim=1)   # (B, n_mod)
+            for m in available_mods
+        ], dim=1)   # (B, n_available)
+        prior_target = torch.stack([
+            self.weather_prior[gt_weather[b], :len(available_mods)]
+            for b in range(B)
+        ])   # (B, n_available)
         scalar_probs = scalar_stack / (scalar_stack.sum(dim=1, keepdim=True) + 1e-6)
         prior_kl = F.kl_div(
             scalar_probs.log().clamp(-10, 0),
