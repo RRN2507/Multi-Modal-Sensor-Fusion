@@ -3,7 +3,8 @@ from data.mock_dataset import build_mock_dataloader
 from models.encoders.sensor_encoders import LiDAREncoder, RADAREncoder
 from models.fusion.weather_gating import WeatherAdaptiveGating
 from models.fusion.bev_fusion_transformer import BEVFusion
-from models.heads.detection_heads import MultiModalDetector, MultiTaskLoss, build_targets
+from models.heads.detection_heads import MultiModalDetector, MultiTaskLoss
+from models.heads.detection_heads import build_targets
 
 device = torch.device("cpu")
 print("Device:", device)
@@ -19,10 +20,10 @@ params = (list(lidar_enc.parameters()) + list(radar_enc.parameters()) +
           list(gate.parameters()) + list(fusion.parameters()) +
           list(detector.parameters()) + list(loss_fn.parameters()))
 optimizer = torch.optim.AdamW(params, lr=2e-4)
-loader    = build_mock_dataloader(batch_size=2, n_samples=10)
+loader    = build_mock_dataloader(batch_size=2, n_samples=50)
 print(f"Parameters: {sum(p.numel() for p in params):,}")
 
-for epoch in range(3):
+for epoch in range(20):
     total = 0.0
     for step, batch in enumerate(loader):
         lidar   = batch["lidar"].to(device)
